@@ -1,14 +1,9 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Thu Jan  9 09:45:38 2020
-
-@author: rustda
-"""
 
 from bs4 import BeautifulSoup
 import requests
 import pandas as pd
 import numpy as np
+import math
 
 
 
@@ -90,6 +85,24 @@ for column in college_data.columns:
     else:
         college_data[column] = college_data[column].astype(float)
 
+"""NBA League Average Stats"""
+url = "https://www.basketball-reference.com/leagues/NBA_stats_per_game.html"
+nba_averages_by_year = dataframe(url)
+
+for column in nba_averages_by_year.columns:
+    if column in ['Season','Lg','Ht']:
+        nba_averages_by_year[column] = nba_averages_by_year[column].astype(str)
+    else:
+        nba_averages_by_year[column] = nba_averages_by_year[column].astype(float)
+
+seasons = []
+for season in nba_averages_by_year['Season']:
+    seasons.append(int(season.split("-")[0]) + 1)
+
+nba_averages_by_year['Season'] = seasons    
+nba_averages_by_year['TS%'] = nba_averages_by_year['PTS'] / (2 * (nba_averages_by_year['FGA'] + (nba_averages_by_year['FTA'] * 0.44)))   
+nba_averages_by_year['Pts/Poss'] = nba_averages_by_year['PTS'] / nba_averages_by_year['Pace']
+
 
 """NBA player stats"""
 
@@ -102,7 +115,6 @@ nba_data = dataframe(url)
 nba_data = nba_data.append(dataframe(url2))
 nba_data.fillna(value=0,inplace=True) 
 nba_data.reset_index(drop=True,inplace=True)
-
 nba_data['Allstar'] = 1
 
 
@@ -136,9 +148,9 @@ missing_college = list(missing['Player'].unique())
 missing = pd.DataFrame()
 for player in missing_college:
     try:
-        player = player.replace("'","")
-        first_name = str.split(player)[0].lower()
-        last_name = str.split(player)[-1].lower()
+        player2 = player.replace("'","")
+        first_name = str.split(player2)[0].lower()
+        last_name = str.split(player2)[-1].lower()
         url = "https://www.sports-reference.com/cbb/players/{0}-{1}-1.html".format(first_name,last_name)
         stats = requests.get(url)
         soup = BeautifulSoup(stats.content, 'html.parser')
@@ -166,11 +178,12 @@ for player in missing_college:
         df = df.tail(1)
         missing = missing.append(df)
     except:
-        print('No tables found for',player)
+        print('No D1 college data found for',player)
         pass        
 
 #create proper columns
 missing = missing[college_data.columns]
+
 
 for column in missing.columns:
     if column in ['G','Rk','Player','From','To','School','Conf','Position']:
@@ -193,7 +206,7 @@ missing['Position'] = missing['Position'].apply(lambda x: Position(x))
 
 college_data = college_data.append(missing)    
 
-#clean data again
+#clean data types again
 for column in college_data.columns:
     if column in ['Player','School','Conf','Position']:
         college_data[column] = college_data[column].astype(str)
@@ -214,16 +227,23 @@ college_data['AST/G'] = college_data['AST'] / college_data['G']
 college_data['Reb/36'] = college_data['TRB'] / college_data['MP'] * 36
 college_data['Reb/G'] = college_data['TRB'] / college_data['G']
 college_data['Pts/G'] = college_data['PTS'] / college_data['G']
+college_data['Blk/G'] = college_data['BLK'] / college_data['G']
+college_data['Stl/G'] = college_data['STL'] / college_data['G']
 
-#create altered dataframe to join so the year they began in the NBA matches      
-college_data['From'] = college_data['To'] + 1
+college_data.rename(columns={'To':'Season'},inplace=True)
+college_data = pd.merge(college_data, nba_averages_by_year[['Season','TS%']], how='left',on='Season')
+college_data.rename(columns={'TS%_x':'TS%','TS%_y':'lg_TS%','Season':'To'},inplace=True)
 
-#adjust for players who were injured in their first NBA year
-college_data.loc[college_data['Player'] == 'Blake Griffin', 'From'] = 2011
-college_data.loc[college_data['Player'] == 'Joel Embiid', 'From'] = 2017
-college_data.loc[college_data['Player'] == 'Ben Simmons', 'From'] = 2018
+college_data['relTS'] = round((college_data['TS%'] / college_data['lg_TS%']) * 100)
+college_data['rPC/G'] = college_data['Pts/G'] + (college_data['AST/G'] * 2) + college_data['Reb/G'] + college_data['Reb/G'] + college_data['Stl/G'] - (college_data['PF'] / college_data['G']) - (college_data['TOV'] / college_data['G'])
+college_data['rel rPC/G'] = college_data['rPC/G'] / college_data.groupby('To')['rPC/G'].transform('mean') * 100
+
+
 
 temp = pd.merge(college_data,nba_data[['Player','Allstar']],how='left',on=['Player'])
+#add 2020 allstars (actual selections to be made 1/23/20)
+temp.loc[(temp['Player'] == 'Trae Young') | 
+        (temp['Player'] == 'Pascal Siakam'), 'Allstar'] = 1
 temp['Allstar'].fillna(value=0,inplace=True)
 temp['Allstar'].sum()    
 
@@ -314,6 +334,10 @@ def Allstar_cleanup(row):
         return 1
     elif row['Player'] == 'Tim Hardaway':
         return 0 
+    elif row['Player'] == 'Tony Parker':
+        return 0
+    elif row['Player'] == 'Shawn Kemp':
+        return 0
     else:
         return row['Allstar']
     
@@ -322,14 +346,12 @@ temp['Allstar'] = temp.apply(lambda row: Allstar_cleanup(row), axis = 1)
 
 
 
-
-
-
 """for another file"""
 
 from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.utils import class_weight, resample
 from sklearn.neighbors import KNeighborsClassifier
-from sklearn.metrics import classification_report, roc_auc_score
+from sklearn.metrics import classification_report, roc_auc_score, confusion_matrix
 from sklearn.linear_model import SGDClassifier
 from sklearn.ensemble import GradientBoostingClassifier as GBC, RandomForestClassifier as RF
 from sklearn.neural_network import MLPClassifier as MLP
@@ -339,34 +361,155 @@ temp.fillna(value=0,inplace=True)
 
 for column in temp.select_dtypes(include=['O']):
     temp[column], _ = pd.factorize(temp[column])
-    
+
+#set up x and y for modeling    
 X = pd.DataFrame(temp.drop(['Rk','Player','From','To','Allstar'],axis=1))
 y = temp['Allstar']   
 
 
 
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size = 0.3)
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size = 0.25)
 
-clf = GBC(n_estimators=100, random_state = 101, verbose = 3)
+
+#need to do some sort of re-sampling as class is very imbalanced
+#going to boost allstars to make a balance of 50/50 rather than the current .2/99.8
+
+#from imblearn.over_sampling import SMOTE
+#class_weights = {0:1,1:((len(y_train) - sum(y_train))/sum(y_train))}
+X = pd.concat([X_train, y_train], axis=1)
+not_allstar = X[X.Allstar==0]
+allstar = X[X.Allstar==1]
+
+allstar_upsampled = resample(allstar,
+                          replace=True, # sample with replacement
+                          n_samples=len(not_allstar), # match number in majority class for 50/50 class ratio
+                          random_state=101) 
+
+resampled = pd.concat([not_allstar, allstar_upsampled])
+
+X_train = resampled.drop('Allstar',axis=1)
+y_train = resampled.Allstar
+
+#reset X for predictions later
+X = pd.DataFrame(temp.drop(['Rk','Player','From','To','Allstar'],axis=1))
+
+"""Gradient Boosting Machines"""
+
+
+clf = GBC(n_estimators = 1000, random_state = 101, verbose = 3)
 clf.fit(X_train, y_train)
 clf.score(X_train, y_train)
 
 y_pred = clf.predict_proba(X_test)[:,1]
 
-roc_auc_score(y_test,y_pred)
+GBM_auc = roc_auc_score(y_test,y_pred)
 
-clf_RF = RF(n_estimators=500, random_state = 101, verbose = 3)
+print("Gradient Boosting Machines")
+print(confusion_matrix(y_test,clf.predict(X_test)))
+print(classification_report(y_test,clf.predict(X_test)))
+
+"""Random Forest"""
+
+clf_RF = RF(n_estimators = 500, 
+#            class_weight = class_weights,
+            random_state = 101, 
+            verbose = 3)
+
 clf_RF.fit(X_train, y_train)
 clf_RF.score(X_train, y_train)
 
 RF_y_pred = clf_RF.predict_proba(X_test)[:,1]
-roc_auc_score(y_test, RF_y_pred)
+RF_auc = roc_auc_score(y_test, RF_y_pred)
+
+print("Random Forest")
+print(confusion_matrix(y_test,clf_RF.predict(X_test)))
+print(classification_report(y_test,clf_RF.predict(X_test)))
+
+"""Neural Network"""
+
+param_grid = [{'activation':['logistic','tanh','relu'],
+               'solver':['lbfgs','sgd','adam']}]
+grid = GridSearchCV(MLP(random_state = 101, verbose = True),
+                    param_grid,
+                    cv=3, 
+                    verbose=3)
+
+grid.fit(X_train, y_train)
+print(grid.best_score_)
+
+NN_y_pred = grid.predict_proba(X_test)[:,1]
+NN_auc = roc_auc_score(y_test, NN_y_pred)
+
+print("Neural Network")
+print(confusion_matrix(y_test,grid.predict(X_test)))
+print(classification_report(y_test,grid.predict(X_test)))
+
+"""KNN"""
+
+values_of_k = []
+for i in range(1,round(math.sqrt(len(X_train) + 1))):
+    if i % 2 == 0:
+        continue
+    else:
+        values_of_k.append(i)
+
+#take every 10th value, as testing too many values of k is extremely computationtally expensive
+values_of_k = values_of_k[::10]
+
+param_grid = {'n_neighbors':values_of_k}
+grid_knn = GridSearchCV(KNeighborsClassifier(),param_grid,verbose=3, cv = 3)
+grid_knn.fit(X_train, y_train)
+grid_knn.score(X_train, y_train)
+
+knn_y_pred = grid_knn.predict_proba(X_test)[:,1]
+knn_auc = roc_auc_score(y_test,knn_y_pred)
+
+print("KNeighbors")
+print(confusion_matrix(y_test,grid_knn.predict(X_test)))
+print(classification_report(y_test,grid_knn.predict(X_test)))
+
+"""K-Means"""
+from sklearn.cluster import KMeans
+
+clf_KM = KMeans(n_clusters=2)
+clf_KM.fit(X_train,y_train)
+
+clf_KM.score(X_train, y_train)
+
+KM_y_pred = clf_KM.predict(X_test)
+KM_auc = roc_auc_score(y_test,KM_y_pred)
+
+print("KMeansClustering")
+print(confusion_matrix(y_test,clf_KM.predict(X_test)))
+print(classification_report(y_test,clf_KM.predict(X_test)))
+
+
 
 college_data['Allstar prob'] = clf_RF.predict_proba(X)[:,1]
 
 #college_data.drop('Allstar prob',axis=1,inplace=True)
 
-feature_importances = pd.DataFrame({'Features': X.columns, 
+feature_importances = pd.DataFrame({'Features': X. columns, 
                                     'Importance': clf_RF.feature_importances_.flatten()})
+    
+  
+    
+output = pd.DataFrame(college_data.loc[college_data['Allstar prob'] > 0.001])
+output = output[['Player', 'School','From', 'Conf','Position','Allstar prob']]
+output.sort_values(by=['From','Allstar prob'],ascending=False,inplace=True)
+output.rename(columns={'From':'Draft Year'},inplace=True)
+output['Draft Year'] = output['Draft Year'] - 1
 
-#prospects = college_data.loc[college_data['To'] == 2020]
+
+
+"""Plot Results"""
+import matplotlib.pyplot as plt
+import seaborn as sns
+plt.style.use('fivethirtyeight')
+
+#plot top 5 for each draft year
+
+top5_data = output.groupby('Draft Year',as_index=False).head(5)
+
+sns.scatter(x='Draft Year', y = 'Allstar prob')
+
