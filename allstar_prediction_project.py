@@ -178,7 +178,7 @@ for player in missing_college:
         df = df.tail(1)
         missing = missing.append(df)
     except:
-        print('No D1 college data found for',player)
+        print('No D1 college data found for',player,sort=True)
         pass        
 
 #create proper columns
@@ -235,8 +235,8 @@ college_data = pd.merge(college_data, nba_averages_by_year[['Season','TS%']], ho
 college_data.rename(columns={'TS%_x':'TS%','TS%_y':'lg_TS%','Season':'To'},inplace=True)
 
 college_data['relTS'] = round((college_data['TS%'] / college_data['lg_TS%']) * 100)
-college_data['rPC/G'] = college_data['Pts/G'] + (college_data['AST/G'] * 2) + college_data['Reb/G'] + college_data['Reb/G'] + college_data['Stl/G'] - (college_data['PF'] / college_data['G']) - (college_data['TOV'] / college_data['G'])
-college_data['rel rPC/G'] = college_data['rPC/G'] / college_data.groupby('To')['rPC/G'].transform('mean') * 100
+college_data['PC/G'] = college_data['Pts/G'] + (college_data['AST/G'] * 2) + college_data['Reb/G'] + college_data['Reb/G'] + college_data['Stl/G'] - (college_data['PF'] / college_data['G']) - (college_data['TOV'] / college_data['G'])
+college_data['rel PC/G'] = college_data['PC/G'] / college_data.groupby(['To','Position'])['PC/G'].transform('mean') * 100
 
 
 
@@ -363,10 +363,10 @@ for column in temp.select_dtypes(include=['O']):
     temp[column], _ = pd.factorize(temp[column])
 
 #set up x and y for modeling    
-X = pd.DataFrame(temp.drop(['Rk','Player','From','To','Allstar'],axis=1))
-y = temp['Allstar']   
+X = pd.DataFrame(temp.loc[temp['To'] < 2020].drop(['Rk','Player','From','To','Allstar'],axis=1))
+y = temp.loc[temp['To'] < 2020, 'Allstar']   
 
-
+Draft_2020 = pd.DataFrame(temp.loc[temp['To'] == 2020].drop(['Rk','Player','From','To','Allstar'],axis=1))
 
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size = 0.25)
 
@@ -391,7 +391,7 @@ X_train = resampled.drop('Allstar',axis=1)
 y_train = resampled.Allstar
 
 #reset X for predictions later
-X = pd.DataFrame(temp.drop(['Rk','Player','From','To','Allstar'],axis=1))
+X = pd.DataFrame(temp.loc[temp['To'] < 2020].drop(['Rk','Player','From','To','Allstar'],axis=1))
 
 """Gradient Boosting Machines"""
 
@@ -405,6 +405,7 @@ y_pred = clf.predict_proba(X_test)[:,1]
 GBM_auc = roc_auc_score(y_test,y_pred)
 
 print("Gradient Boosting Machines")
+print('GMB AUC:', GBM_auc)
 print(confusion_matrix(y_test,clf.predict(X_test)))
 print(classification_report(y_test,clf.predict(X_test)))
 
@@ -422,6 +423,7 @@ RF_y_pred = clf_RF.predict_proba(X_test)[:,1]
 RF_auc = roc_auc_score(y_test, RF_y_pred)
 
 print("Random Forest")
+print('Random Forest AUC:', RF_auc)
 print(confusion_matrix(y_test,clf_RF.predict(X_test)))
 print(classification_report(y_test,clf_RF.predict(X_test)))
 
@@ -441,6 +443,7 @@ NN_y_pred = grid.predict_proba(X_test)[:,1]
 NN_auc = roc_auc_score(y_test, NN_y_pred)
 
 print("Neural Network")
+print('Neural Network AUC:', NN_auc)
 print(confusion_matrix(y_test,grid.predict(X_test)))
 print(classification_report(y_test,grid.predict(X_test)))
 
@@ -465,6 +468,7 @@ knn_y_pred = grid_knn.predict_proba(X_test)[:,1]
 knn_auc = roc_auc_score(y_test,knn_y_pred)
 
 print("KNeighbors")
+print('KNeighbors AUC:', knn_auc)
 print(confusion_matrix(y_test,grid_knn.predict(X_test)))
 print(classification_report(y_test,grid_knn.predict(X_test)))
 
@@ -480,23 +484,27 @@ KM_y_pred = clf_KM.predict(X_test)
 KM_auc = roc_auc_score(y_test,KM_y_pred)
 
 print("KMeansClustering")
+print('KMeans AUC:', KM_auc)
 print(confusion_matrix(y_test,clf_KM.predict(X_test)))
 print(classification_report(y_test,clf_KM.predict(X_test)))
 
 
+"""final predict"""
+X = pd.DataFrame(temp.drop(['Rk','Player','From','To','Allstar'],axis=1))
 
-college_data['Allstar prob'] = clf_RF.predict_proba(X)[:,1]
+college_data['Allstar Probability'] = clf_RF.predict_proba(X)[:,1]
+
 
 #college_data.drop('Allstar prob',axis=1,inplace=True)
 
-feature_importances = pd.DataFrame({'Features': X. columns, 
+feature_importances = pd.DataFrame({'Feature': X. columns, 
                                     'Importance': clf_RF.feature_importances_.flatten()})
     
   
     
-output = pd.DataFrame(college_data.loc[college_data['Allstar prob'] > 0.001])
-output = output[['Player', 'School','From', 'Conf','Position','Allstar prob']]
-output.sort_values(by=['From','Allstar prob'],ascending=False,inplace=True)
+output = pd.DataFrame(college_data.loc[college_data['Allstar Probability'] > 0.001])
+output = output[['Player', 'School','From', 'Conf','Position','Allstar Probability']]
+output.sort_values(by=['From','Allstar Probability'],ascending=False,inplace=True)
 output.rename(columns={'From':'Draft Year'},inplace=True)
 output['Draft Year'] = output['Draft Year'] - 1
 
@@ -506,10 +514,43 @@ output['Draft Year'] = output['Draft Year'] - 1
 import matplotlib.pyplot as plt
 import seaborn as sns
 plt.style.use('fivethirtyeight')
+#plot most important feature 
+top_feature = feature_importances.loc[feature_importances['Importance'] == feature_importances['Importance'].max(), 'Feature']
+college_data2 = college_data.loc[college_data['Allstar Probability'] >= .01]
+plot_X = college_data2[top_feature].iloc[:,0]
+plot_y = college_data2['Allstar Probability']
 
-#plot top 5 for each draft year
+fig, ax = plt.subplots(figsize = (12,8))
+ax = sns.scatterplot(plot_X,plot_y,alpha= 0.8,color='dodgerblue')
+ax2 = sns.regplot(plot_X,plot_y,scatter=False, ci=None, color = 'dodgerblue')
 
-top5_data = output.groupby('Draft Year',as_index=False).head(5)
 
-sns.scatter(x='Draft Year', y = 'Allstar prob')
+#plot this feature for 2020 players who have at least a 1% chance of being an allstar
+fig, ax = plt.subplots(figsize = (12,8))
+players2020 = college_data.loc[(college_data['To'] == 2020) & 
+                               college_data['Allstar Probability'] >= .01]
+plot_X = players2020[top_feature].iloc[:,0]
+plot_y = players2020['Allstar Probability']
+ax = sns.scatterplot(plot_X,plot_y,alpha= 0.8,color='dodgerblue')
 
+top10_upcoming = players2020.sort_values(by='Allstar Probability',ascending=False).head(10)
+top10_upcoming.reset_index(drop=True,inplace=True)
+ax2 = sns.scatterplot(top10_upcoming[top_feature].iloc[:,0], top10_upcoming['Allstar Probability'],alpha= 0.8,color='red')
+
+for i in range(len(top10_upcoming)):
+    player = top10_upcoming['Player'][i]
+    x = top10_upcoming[top_feature].iloc[:,0][i]
+    y = top10_upcoming['Allstar Probability'][i]
+    if player == 'Cole Anthony':
+        plt.annotate(player, xy=(x,y),horizontalalignment='left',verticalalignment='bottom')
+    elif player == 'James Wiseman':
+        plt.annotate(player, xy=(x,y),horizontalalignment='left',verticalalignment='top')
+    else:
+        plt.annotate(player, xy=(x,y),horizontalalignment='right',verticalalignment='bottom')
+
+plt.text(x = -((ax.get_xticks()[1] - ax.get_xticks()[0]) / 2), y = ax.get_ylim()[1] * 1.1,
+         fontsize = 26, weight = 'bold', alpha = 0.75,
+         s = 'NBA All-Star probabilities for current college players')
+plt.text(x = -((ax.get_xticks()[1] - ax.get_xticks()[0]) / 2), y = ax.get_ylim()[1] * 1.05,
+         fontsize = 20, alpha = 0.85,
+         s = 'Plotted agains most important feature, top 10 players highlighted')
