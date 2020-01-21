@@ -510,10 +510,11 @@ output['Draft Year'] = output['Draft Year'] - 1
 
 
 
-"""Plot Results"""
+"""Visualization"""
 import matplotlib.pyplot as plt
 import seaborn as sns
 plt.style.use('fivethirtyeight')
+
 #plot most important feature 
 top_feature = feature_importances.loc[feature_importances['Importance'] == feature_importances['Importance'].max(), 'Feature']
 college_data2 = college_data.loc[college_data['Allstar Probability'] >= .01]
