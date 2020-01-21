@@ -176,9 +176,9 @@ for player in missing_college:
             position = str(soup.findAll('p')[1].text).split()[1]
         df['Position'] = position
         df = df.tail(1)
-        missing = missing.append(df)
+        missing = missing.append(df,sort=True)
     except:
-        print('No D1 college data found for',player,sort=True)
+        print('No D1 college data found for',player)
         pass        
 
 #create proper columns
@@ -368,7 +368,7 @@ y = temp.loc[temp['To'] < 2020, 'Allstar']
 
 Draft_2020 = pd.DataFrame(temp.loc[temp['To'] == 2020].drop(['Rk','Player','From','To','Allstar'],axis=1))
 
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size = 0.25)
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size = 0.20)
 
 
 #need to do some sort of re-sampling as class is very imbalanced
@@ -554,4 +554,37 @@ plt.text(x = -((ax.get_xticks()[1] - ax.get_xticks()[0]) / 2), y = ax.get_ylim()
          s = 'NBA All-Star probabilities for current college players')
 plt.text(x = -((ax.get_xticks()[1] - ax.get_xticks()[0]) / 2), y = ax.get_ylim()[1] * 1.05,
          fontsize = 20, alpha = 0.85,
-         s = 'Plotted agains most important feature, top 10 players highlighted')
+         s = 'Plotted against most important feature, top 10 players highlighted')
+
+
+
+#plot for last 5 years
+fig, ax = plt.subplots(figsize = (12,8))
+players_last5 = college_data.loc[(college_data['To'] > 2014) & 
+                                 (college_data['To'] < 2020) & 
+                               college_data['Allstar Probability'] >= .01]
+plot_X = players_last5[top_feature].iloc[:,0]
+plot_y = players_last5['Allstar Probability']
+ax = sns.scatterplot(plot_X,plot_y,alpha= 0.8,color='dodgerblue')
+
+top10_last5 = players_last5.sort_values(by='Allstar Probability',ascending=False).head(10)
+top10_last5.reset_index(drop=True,inplace=True)
+ax2 = sns.scatterplot(top10_last5[top_feature].iloc[:,0], top10_last5['Allstar Probability'],alpha= 0.8,color='red')
+
+for i in range(len(top10_last5)):
+    player = top10_last5['Player'][i]
+    x = top10_last5[top_feature].iloc[:,0][i]
+    y = top10_last5['Allstar Probability'][i]
+    if player == 'Cole Anthony':
+        plt.annotate(player, xy=(x,y),horizontalalignment='left',verticalalignment='bottom')
+    elif player == 'James Wiseman':
+        plt.annotate(player, xy=(x,y),horizontalalignment='left',verticalalignment='top')
+    else:
+        plt.annotate(player, xy=(x,y),horizontalalignment='right',verticalalignment='bottom')
+
+plt.text(x = -((ax.get_xticks()[1] - ax.get_xticks()[0]) / 2), y = ax.get_ylim()[1] * 1.1,
+         fontsize = 26, weight = 'bold', alpha = 0.75,
+         s = 'NBA All-Star probabilities for current college players')
+plt.text(x = -((ax.get_xticks()[1] - ax.get_xticks()[0]) / 2), y = ax.get_ylim()[1] * 1.05,
+         fontsize = 20, alpha = 0.85,
+         s = 'Plotted against most important feature, top 10 players highlighted')
