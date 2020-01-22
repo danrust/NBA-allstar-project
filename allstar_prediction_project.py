@@ -229,6 +229,7 @@ college_data['Reb/G'] = college_data['TRB'] / college_data['G']
 college_data['Pts/G'] = college_data['PTS'] / college_data['G']
 college_data['Blk/G'] = college_data['BLK'] / college_data['G']
 college_data['Stl/G'] = college_data['STL'] / college_data['G']
+college_data['eFG%'] = (college_data['FG'] + (college_data['3P'] * 0.5)) / college_data['FGA']
 
 college_data.rename(columns={'To':'Season'},inplace=True)
 college_data = pd.merge(college_data, nba_averages_by_year[['Season','TS%']], how='left',on='Season')
@@ -243,7 +244,8 @@ college_data['rel PC/G'] = college_data['PC/G'] / college_data.groupby(['To','Po
 temp = pd.merge(college_data,nba_data[['Player','Allstar']],how='left',on=['Player'])
 #add 2020 allstars (actual selections to be made 1/23/20)
 temp.loc[(temp['Player'] == 'Trae Young') | 
-        (temp['Player'] == 'Pascal Siakam'), 'Allstar'] = 1
+        (temp['Player'] == 'Pascal Siakam') |
+        (temp['Player'] == 'Brandon Ingram'), 'Allstar'] = 1
 temp['Allstar'].fillna(value=0,inplace=True)
 temp['Allstar'].sum()    
 
@@ -355,6 +357,7 @@ from sklearn.metrics import classification_report, roc_auc_score, confusion_matr
 from sklearn.linear_model import SGDClassifier
 from sklearn.ensemble import GradientBoostingClassifier as GBC, RandomForestClassifier as RF
 from sklearn.neural_network import MLPClassifier as MLP
+from imblearn.over_sampling import SMOTE
 
 temp.replace([np.inf, -np.inf], np.nan, inplace=True)
 temp.fillna(value=0,inplace=True)
@@ -368,30 +371,33 @@ y = temp.loc[temp['To'] < 2020, 'Allstar']
 
 Draft_2020 = pd.DataFrame(temp.loc[temp['To'] == 2020].drop(['Rk','Player','From','To','Allstar'],axis=1))
 
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size = 0.20)
+sm = SMOTE(sampling_strategy='auto', k_neighbors = 11, random_state = 101)
+X_res, y_res = sm.fit_resample(X, y)
+X_train, X_test, y_train, y_test = train_test_split(X_res, y_res, test_size = 0.25, random_state = 101)
 
 
 #need to do some sort of re-sampling as class is very imbalanced
 #going to boost allstars to make a balance of 50/50 rather than the current .2/99.8
 
-#from imblearn.over_sampling import SMOTE
 #class_weights = {0:1,1:((len(y_train) - sum(y_train))/sum(y_train))}
-X = pd.concat([X_train, y_train], axis=1)
-not_allstar = X[X.Allstar==0]
-allstar = X[X.Allstar==1]
+#X = pd.concat([X_train, y_train], axis=1)
+#not_allstar = X[X.Allstar==0]
+#allstar = X[X.Allstar==1]
+#
+#allstar_upsampled = resample(allstar,
+#                          replace=True, # sample with replacement
+#                          n_samples=len(not_allstar), # match number in majority class for 50/50 class ratio
+#                          random_state=101) 
 
-allstar_upsampled = resample(allstar,
-                          replace=True, # sample with replacement
-                          n_samples=len(not_allstar), # match number in majority class for 50/50 class ratio
-                          random_state=101) 
 
-resampled = pd.concat([not_allstar, allstar_upsampled])
+#resampled = pd.concat([not_allstar, allstar_upsampled])
 
-X_train = resampled.drop('Allstar',axis=1)
-y_train = resampled.Allstar
+
+#X_train = resampled.drop('Allstar',axis=1)
+#y_train = resampled.Allstar
 
 #reset X for predictions later
-X = pd.DataFrame(temp.loc[temp['To'] < 2020].drop(['Rk','Player','From','To','Allstar'],axis=1))
+#X = pd.DataFrame(temp.loc[temp['To'] < 2020].drop(['Rk','Player','From','To','Allstar'],axis=1))
 
 """Gradient Boosting Machines"""
 
@@ -502,7 +508,7 @@ feature_importances = pd.DataFrame({'Feature': X. columns,
     
   
     
-output = pd.DataFrame(college_data.loc[college_data['Allstar Probability'] > 0.001])
+output = pd.DataFrame(college_data.loc[college_data['Allstar Probability'] > 0.01])
 output = output[['Player', 'School','From', 'Conf','Position','Allstar Probability']]
 output.sort_values(by=['From','Allstar Probability'],ascending=False,inplace=True)
 output.rename(columns={'From':'Draft Year'},inplace=True)
@@ -534,7 +540,7 @@ plot_X = players2020[top_feature].iloc[:,0]
 plot_y = players2020['Allstar Probability']
 ax = sns.scatterplot(plot_X,plot_y,alpha= 0.8,color='dodgerblue')
 
-top10_upcoming = players2020.sort_values(by='Allstar Probability',ascending=False).head(10)
+top10_upcoming = players2020.sort_values(by='Allstar Probability',ascending=False).head(5)
 top10_upcoming.reset_index(drop=True,inplace=True)
 ax2 = sns.scatterplot(top10_upcoming[top_feature].iloc[:,0], top10_upcoming['Allstar Probability'],alpha= 0.8,color='red')
 
@@ -542,12 +548,7 @@ for i in range(len(top10_upcoming)):
     player = top10_upcoming['Player'][i]
     x = top10_upcoming[top_feature].iloc[:,0][i]
     y = top10_upcoming['Allstar Probability'][i]
-    if player == 'Cole Anthony':
-        plt.annotate(player, xy=(x,y),horizontalalignment='left',verticalalignment='bottom')
-    elif player == 'James Wiseman':
-        plt.annotate(player, xy=(x,y),horizontalalignment='left',verticalalignment='top')
-    else:
-        plt.annotate(player, xy=(x,y),horizontalalignment='right',verticalalignment='bottom')
+    plt.annotate(player, xy=(x,y),horizontalalignment='right',verticalalignment='bottom')
 
 plt.text(x = -((ax.get_xticks()[1] - ax.get_xticks()[0]) / 2), y = ax.get_ylim()[1] * 1.1,
          fontsize = 26, weight = 'bold', alpha = 0.75,
