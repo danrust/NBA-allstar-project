@@ -242,15 +242,16 @@ college_data['rel PC/G'] = college_data['PC/G'] / college_data.groupby(['To','Po
 
 
 temp = pd.merge(college_data,nba_data[['Player','Allstar']],how='left',on=['Player'])
-#add 2020 allstars (actual selections to be made 1/23/20)
-temp.loc[(temp['Player'] == 'Trae Young') | 
-        (temp['Player'] == 'Pascal Siakam') |
-        (temp['Player'] == 'Brandon Ingram'), 'Allstar'] = 1
+##add 2020 allstars (actual selections to be made 1/23/20)
+#temp.loc[(temp['Player'] == 'Trae Young') | 
+#        (temp['Player'] == 'Pascal Siakam') |
+#        (temp['Player'] == 'Brandon Ingram'), 'Allstar'] = 1
 temp['Allstar'].fillna(value=0,inplace=True)
+temp['Allstar'].reset_index(drop=True,inplace=True)
 temp['Allstar'].sum()    
 
 def Allstar_cleanup(row):
-    if row['From'] > 2019:
+    if row['To'] > 2019:
         return 0
     elif (row['Player'] == 'Anthony Davis') & (row['School'] == 'Kentucky'):
         return 1
@@ -280,6 +281,10 @@ def Allstar_cleanup(row):
         return 1
     elif row['Player'] == 'Derrick Coleman':
         return 0
+    elif (row['Player'] == 'Devin Booker') & (row['School'] == 'Kentucky'):
+        return 1
+    elif row['Player'] == 'Devin Booker':
+        return 0
     elif (row['Player'] == 'Devin Harris') & (row['School'] == 'Wisconsin'):
         return 1
     elif row['Player'] == 'Devin Harris':
@@ -295,6 +300,10 @@ def Allstar_cleanup(row):
     elif (row['Player'] == 'Glenn Robinson') & (row['School'] == 'Purdue'):
         return 1
     elif row['Player'] == 'Glenn Robinson':
+        return 0
+    elif (row['Player'] == 'Isaiah Thomas') & (row['School'] == 'Washington'):
+        return 1
+    elif row['Player'] == 'Isaiah Thomas':
         return 0
     elif (row['Player'] == 'James Harden') & (row['School'] == 'Arizona'):
         return 1
@@ -346,8 +355,6 @@ def Allstar_cleanup(row):
 temp['Allstar'] = temp.apply(lambda row: Allstar_cleanup(row), axis = 1)
 
 
-
-
 """for another file"""
 
 from sklearn.model_selection import train_test_split, GridSearchCV
@@ -371,7 +378,7 @@ y = temp.loc[temp['To'] < 2020, 'Allstar']
 
 Draft_2020 = pd.DataFrame(temp.loc[temp['To'] == 2020].drop(['Rk','Player','From','To','Allstar'],axis=1))
 
-sm = SMOTE(sampling_strategy='auto', k_neighbors = 11, random_state = 101)
+sm = SMOTE(sampling_strategy='auto', k_neighbors = 7, random_state = 101)
 X_res, y_res = sm.fit_resample(X, y)
 X_train, X_test, y_train, y_test = train_test_split(X_res, y_res, test_size = 0.25, random_state = 101)
 
@@ -540,7 +547,7 @@ plot_X = players2020[top_feature].iloc[:,0]
 plot_y = players2020['Allstar Probability']
 ax = sns.scatterplot(plot_X,plot_y,alpha= 0.8,color='dodgerblue')
 
-top10_upcoming = players2020.sort_values(by='Allstar Probability',ascending=False).head(5)
+top10_upcoming = players2020.sort_values(by='Allstar Probability',ascending=False).head(6)
 top10_upcoming.reset_index(drop=True,inplace=True)
 ax2 = sns.scatterplot(top10_upcoming[top_feature].iloc[:,0], top10_upcoming['Allstar Probability'],alpha= 0.8,color='red')
 
@@ -556,7 +563,6 @@ plt.text(x = -((ax.get_xticks()[1] - ax.get_xticks()[0]) / 2), y = ax.get_ylim()
 plt.text(x = -((ax.get_xticks()[1] - ax.get_xticks()[0]) / 2), y = ax.get_ylim()[1] * 1.05,
          fontsize = 20, alpha = 0.85,
          s = 'Plotted against most important feature, top 10 players highlighted')
-
 
 
 #plot for last 5 years
